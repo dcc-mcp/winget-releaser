@@ -52,12 +52,29 @@ runs:
           exit 1
         }
       shell: pwsh
-    - uses: cargo-bins/cargo-binstall@main
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
-    - run: cargo binstall komac -y
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
+    # Upstream installs Komac through cargo-bins/cargo-binstall@main, a mutable
+    # branch ref whose own toolchain pulls the latest Komac release at run time.
+    # This fork instead downloads one pinned Komac build and verifies its SHA256,
+    # so no part of the chain can move without a commit in this repository.
+    # To bump: set the two constants below to the matching values from the
+    # SHA256SUMS asset of the target Komac release.
+    - run: |
+        $ErrorActionPreference = 'Stop'
+        $Version = '2.16.0'
+        $Sha256  = 'bdc45baf028f750da7519cc8a5f2eab5dfef46dfe88650eeb0d0a9bf51446e4f'
+        $Asset   = "komac-$Version-x86_64-pc-windows-msvc.exe"
+        $Url     = "https://github.com/russellbanks/Komac/releases/download/v$Version/$Asset"
+        $Dir     = Join-Path $env:RUNNER_TEMP 'komac'
+        New-Item -ItemType Directory -Path $Dir -Force | Out-Null
+        $Exe = Join-Path $Dir 'komac.exe'
+        Invoke-WebRequest -Uri $Url -OutFile $Exe
+        $Actual = (Get-FileHash -Path $Exe -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($Actual -ne $Sha256.ToLowerInvariant()) {
+          Write-Output "::error::Komac $Version SHA256 mismatch: expected $Sha256, got $Actual"
+          exit 1
+        }
+        Add-Content -Path $env:GITHUB_PATH -Value $Dir
+        Write-Output "Installed Komac $Version ($Actual) from $Url"
       shell: pwsh
     - run: |
         # get release information
